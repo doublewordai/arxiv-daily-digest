@@ -1,9 +1,3 @@
-cd /Users/amandamilberg/Demo/arxiv-agentic-usecase/
-touch .gitignore
-```
-
-**2. Add this content to `.gitignore`:**
-```
 .env
 seen_papers.json
 batch_requests_*.jsonl
