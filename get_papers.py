@@ -24,8 +24,10 @@ def save_seen_papers(paper_ids):
     seen = load_seen_papers()
     seen.update(paper_ids)
     
-    # Make sure directory exists
-    os.makedirs(os.path.dirname(SEEN_PAPERS_FILE), exist_ok=True)
+    # Make sure directory exists (only if there's actually a directory in the path)
+    dirname = os.path.dirname(SEEN_PAPERS_FILE)
+    if dirname:  # Only create directory if path includes one
+        os.makedirs(dirname, exist_ok=True)
     
     with open(SEEN_PAPERS_FILE, 'w') as f:
         json.dump(list(seen), f, indent=2)
@@ -39,9 +41,13 @@ def filter_unseen_papers(papers):
 
 def get_daily_papers(keywords, max_results=100):
     """Get papers from the last 24 hours"""
+
+    # On Mondays, look back 3 days to catch Friday's papers
+    day_of_week = datetime.now().weekday()
+    lookback_days = 3 if day_of_week == 0 else 1  # 0 = Monday
     
-    yesterday = datetime.now() - timedelta(days=1)
-    
+    cutoff_date = datetime.now() - timedelta(days=lookback_days)
+        
     # Build search query
     query = " OR ".join([f'"{keyword}"' for keyword in keywords])
     
@@ -56,7 +62,7 @@ def get_daily_papers(keywords, max_results=100):
     daily_papers = []
     
     for paper in client.results(search):
-        if paper.published.replace(tzinfo=None) >= yesterday:
+        if paper.published.replace(tzinfo=None) >= cutoff_date:
             daily_papers.append({
                 'id': paper.entry_id.split('/')[-1],
                 'title': paper.title,

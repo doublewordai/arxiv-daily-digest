@@ -1,0 +1,4 @@
+DW_API_KEY=your_doubleword_api_key_here
+DW_BASE_URL=https://api.doubleword.ai/v1
+SLACK_WEBHOOK_URL=https://hooks.slack.com/services/YOUR/WEBHOOK/HERE
+MODEL_NAME=Qwen/Qwen3-VL-30B-A3B-Instruct-FP8

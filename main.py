@@ -6,16 +6,20 @@ from openai import OpenAI
 import os
 from datetime import datetime
 import time
+from dotenv import load_dotenv
 
+# Load .env file if it exists (local development)
+if os.path.exists('.env'):
+    load_dotenv()
+    print("✓ Loaded .env file")
 
-# Variables Hardcoded for now
-DW_API_KEY = os.getenv("DW_API_KEY")  # Your actual key
+DW_API_KEY = os.getenv("DW_API_KEY")  
 DW_BASE_URL = os.getenv("DW_BASE_URL")
-SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")  # Get from Slack
+SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")  
 KEYWORDS = ["large language models", "LLM", "transformers"]
 MODEL_NAME = os.getenv("MODEL_NAME")
 
-# Team interests - hardcoded
+# Team interests - hardcoded for now 
 TEAM_PROFILE = {
     "focus": "The team is working on building a batched API server to offer the cheapest intelligence possible. Please give any relevant papers that would be helpful when they are designing this application.",
     "interests": [
@@ -100,22 +104,6 @@ def create_batch_evaluation(papers):
 
     return requests
 
-def wait_for_batch(batch_id, check_interval=60):
-    """Wait for batch to complete"""
-    
-    print("Waiting for batch to complete...")
-    while True:
-        batch = check_batch_status(batch_id)
-        
-        if batch.status == "completed":
-            print("✓ Batch completed!")
-            return get_batch_results(batch_id)
-        elif batch.status == "failed":
-            print("✗ Batch failed")
-            return None
-        
-        time.sleep(check_interval)
-
 
 def daily_run(keywords):
     """Simple daily run for the team"""
@@ -155,7 +143,7 @@ def daily_run(keywords):
     print(f"Batch submitted: {batch.id}")
     
     # 4. Wait for results
-    results = wait_for_batch(batch.id)
+    results = wait_for_batch(client, batch.id)
 
      # Get top 10
     top_papers = get_top_papers(results, top_n=10)
