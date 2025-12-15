@@ -1,12 +1,12 @@
 # arXiv Daily Digest
 
-**Never miss relevant research papers again.** This tool automatically fetches new papers from arXiv, evaluates them against your team's interests using AI, and delivers a curated digest to Slack every day.
+**Never miss relevant research papers again.** This tool automatically fetches new papers from arXiv, evaluates them against your team's interests in batch using a LLM provided by Doubleword, and delivers a curated digest to Slack every day.
 
 ## What It Does
 
 Every day, hundreds of papers get published on arXiv. This tool:
 
-1. **Fetches** new papers matching your keywords (with smart Monday handling for weekend gaps)
+1. **Fetches** new papers matching your keywords
 2. **Evaluates** each paper's relevance using the Doubleword Batch API
 3. **Ranks** papers by how well they match your team's focus
 4. **Delivers** the top 10 most relevant papers directly to Slack
@@ -84,8 +84,7 @@ arXiv API → Filter New Papers → Batch Evaluation → Rank by Relevance → S
 ```
 
 **1. Paper Fetching** (`get_papers.py`)
-- Searches arXiv for papers published in the last 24 hours
-- On Mondays, automatically looks back 3 days to catch Friday's papers (arXiv doesn't publish on weekends)
+- Searches arXiv for papers published in the last 24 hours 
 - Filters by your keywords
 - Removes papers you've already seen
 
@@ -94,25 +93,20 @@ arXiv API → Filter New Papers → Batch Evaluation → Rank by Relevance → S
 - Uses Doubleword's batch API for cost-efficient processing
 - Scores papers 0-10 based on your team profile
 - Extracts key insights and generates summaries for long abstracts
-- Handles model responses with `<think>` tags or other extra text
+- Handles model responses with `<think>` tags if using reasoning model
 
 **3. Slack Delivery** (`send_to_slack.py`)
 - Selects only papers scoring ≥7
 - Ranks by relevance score
 - Formats as rich Slack blocks with links and summaries
-- Sends top 10 to your channel
+- Sends top 10 to your given channel
 
 ### What Makes This Special
 
-**Cost-Effective**: Uses batch API processing instead of real-time calls, making it significantly cheaper to evaluate hundreds of papers.
-
-**Smart Filtering**: Papers are evaluated against your specific team profile, not just generic relevance.
-
-**No Duplicates**: Tracks what you've seen so you never get the same paper twice.
-
-**Weekend-Aware**: Automatically adjusts for arXiv's publication schedule (no papers on weekends).
-
-**Zero Maintenance**: Set it and forget it. Run daily via cron, Docker, or Kubernetes.
+1. **Cost-Effective**: Uses batch API processing instead of real-time calls, making it significantly cheaper to evaluate hundreds of papers.
+2. **Smart Filtering**: Papers are evaluated against your specific team profile, not just generic relevance.
+3. **No Duplicates**: Tracks what you've seen so you never get the same paper twice.
+4. **Zero Maintenance**: Set it and forget it. Run daily via cron, Docker, or Kubernetes.
 
 ## Running in Production
 
@@ -134,73 +128,73 @@ docker run --env-file .env arxiv-digest
 
 2. **Create secrets:**
    ```bash
-   kubectl create secret generic arxiv-digest-secrets \
+   kubectl create secret generic arxiv-secrets \
      --from-literal=DW_API_KEY='your_actual_key' \
      --from-literal=SLACK_WEBHOOK_URL='your_actual_webhook'
+     --from-literal=model_name='your_chosen_model_name' \
+     --from-literal=dw_base_url='https://app.doubleword.ai/ai/v1' \
+   -n daily-digest
    ```
 
 3. **Deploy the CronJob:**
    
    Create `k8s-deployment.yaml`:
    ```yaml
-   apiVersion: v1
-   kind: ConfigMap
-   metadata:
-     name: arxiv-digest-config
-   data:
-     DW_BASE_URL: "https://api.doubleword.ai/v1"
-     MODEL_NAME: "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8"
-   
-   ---
-   apiVersion: v1
-   kind: PersistentVolumeClaim
-   metadata:
-     name: arxiv-digest-data
-   spec:
-     accessModes:
-       - ReadWriteOnce
-     resources:
-       requests:
-         storage: 1Gi
-   
-   ---
    apiVersion: batch/v1
    kind: CronJob
    metadata:
      name: arxiv-digest
+     namespace: daily-digest
    spec:
-     # Run Tuesday-Saturday at 9am UTC
-     schedule: "0 9 * * 2-6"
+     schedule: "0 10 * * 1-5"  # 10 AM weekdays
+     timeZone: "Europe/London"  # Adjust to your timezone
+     successfulJobsHistoryLimit: 3
+     failedJobsHistoryLimit: 3
+     concurrencyPolicy: Forbid
      jobTemplate:
        spec:
          template:
            spec:
+             restartPolicy: OnFailure
              containers:
              - name: arxiv-digest
                image: your-registry/arxiv-digest:latest
                imagePullPolicy: Always
-               envFrom:
-               - configMapRef:
-                   name: arxiv-digest-config
                env:
                - name: DW_API_KEY
                  valueFrom:
                    secretKeyRef:
-                     name: arxiv-digest-secrets
-                     key: DW_API_KEY
+                     name: arxiv-secrets
+                     key: dw_api_key
                - name: SLACK_WEBHOOK_URL
                  valueFrom:
                    secretKeyRef:
-                     name: arxiv-digest-secrets
-                     key: SLACK_WEBHOOK_URL
+                     name: arxiv-secrets
+                     key: slack_webhook_url
+               - name: MODEL_NAME
+                 valueFrom:
+                   secretKeyRef:
+                     name: arxiv-secrets
+                     key: model_name
+               - name: DW_BASE_URL
+                 valueFrom:
+                   secretKeyRef:
+                     name: arxiv-secrets
+                     key: dw_base_url
                volumeMounts:
                - name: data
                  mountPath: /app/data
+               resources:
+                 requests:
+                   memory: "256Mi"
+                   cpu: "250m"
+                 limits:
+                   memory: "512Mi"
+                   cpu: "500m"
              volumes:
              - name: data
                persistentVolumeClaim:
-                 claimName: arxiv-digest-data
-             restartPolicy: OnFailure
+                 claimName: arxiv-data-pvc
    ```
 
 4. **Apply and verify:**
@@ -215,9 +209,9 @@ docker run --env-file .env arxiv-digest
 
 ### Cron Job (Traditional Server)
 
-Run daily Tuesday-Saturday at 9 AM:
+Run daily Mondy-Saturday at 9 AM:
 ```bash
-0 9 * * 2-6 cd /path/to/arxiv-daily-digest && /usr/bin/python3 main.py
+0 9 * * *  cd /path/to/arxiv-daily-digest && /usr/bin/python3 main.py
 ```
 
 ## Configuration
@@ -255,23 +249,6 @@ By default, only papers scoring ≥7 are included. Adjust in `send_to_slack.py`:
 ```python
 relevant = [r for r in results if r.get('is_relevant', False)]
 ```
-
-## File Structure
-
-```
-arxiv-daily-digest/
-├── main.py                      # Main orchestration
-├── get_papers.py                # arXiv fetching logic
-├── send_to_slack.py             # Slack formatting & delivery
-├── create_batch_evaluation.py   # Batch processing & result parsing
-├── requirements.txt             # Dependencies
-├── Dockerfile                   # Container definition
-├── .env.example                 # Environment variable template
-├── .gitignore                   # Git ignore rules
-├── seen_papers.json             # Tracking file (auto-generated)
-└── batch_requests_*.jsonl       # Batch files (auto-generated)
-```
-
 ## Customization Ideas
 
 - **Change the source**: Swap arXiv for bioRxiv, medRxiv, or another preprint server
@@ -310,30 +287,6 @@ pip install -r requirements.txt
 python main.py
 ```
 
-### Rebuilding Docker Image
-```bash
-# Build new version
-docker build -t your-registry/arxiv-digest:v1.1 .
-
-# Test locally
-docker run --env-file .env your-registry/arxiv-digest:v1.1
-
-# Push to registry
-docker push your-registry/arxiv-digest:v1.1
-
-# Update Kubernetes
-kubectl set image cronjob/arxiv-digest arxiv-digest=your-registry/arxiv-digest:v1.1
-```
-
 ## Contributing
 
 Have ideas for improvements? Found a bug? Contributions welcome!
-
-## License
-
-MIT License - feel free to use and modify for your needs.
-
----
-
-**Built by the team at [Doubleword](https://doubleword.ai)**  
-Making AI batch processing affordable and accessible.
